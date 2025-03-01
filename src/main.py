@@ -1,9 +1,9 @@
 import pygame
 import os
 import random
+import sys
 
 pygame.init()
-
 screen_width = 800
 screen_height = 600
 screen = pygame.display.set_mode((screen_width, screen_height))
@@ -145,11 +145,25 @@ class Player(pygame.sprite.Sprite):
 
 def load_level(filename):
     filename = "data/" + filename
-    with open(filename, 'r') as mapFile:
-        level_map = [line.strip() for line in mapFile]
-    max_width = max(map(len, level_map))
-    return [list(row.ljust(max_width, '.')) for row in level_map]
-
+    if not os.path.exists(filename):
+        print(f"Файл уровня '{filename}' не найден")
+        return None
+    try:
+        with open(filename, 'r') as mapFile:
+            level_map = [line.strip() for line in mapFile]
+        
+        if not all(all(c in '#.' for c in row) for row in level_map):
+            print(f"Файл '{filename}' не является планом уровня")
+            return None
+            
+        max_width = max(map(len, level_map))
+        return [list(row.ljust(max_width, '.')) for row in level_map]
+    except UnicodeDecodeError:
+        print(f"Файл '{filename}' не является текстовым файлом")
+        return None
+    except Exception:
+        print(f"Не удалось обработать файл '{filename}'")
+        return None
 
 def find_free_coordinates(level):
     free_coords = []
@@ -160,7 +174,13 @@ def find_free_coordinates(level):
     return free_coords
 
 
-level_data = load_level("level.txt")
+# Get level filename from input
+while True:
+    level_filename = input("Введите имя файла уровня (например, level1.txt): ")
+    level_data = load_level(level_filename)
+    if level_data is not None:
+        break
+    print("Неверное имя файла или некорректный формат уровня. Попробуйте еще раз.")
 
 board = Board(len(level_data[0]), len(level_data), level_data)
 
