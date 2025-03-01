@@ -34,6 +34,7 @@ mario_image = load_image("mar.png", -1)
 fon_image = load_image("fon.jpg")
 
 tile_size = grass_image.get_width()
+VISIBLE_CELLS = 8  # Размер видимой области 8x8
 
 
 class Board:
@@ -42,64 +43,42 @@ class Board:
         self.height = height
         self.level_data = level_data
         self.board = [[0] * width for _ in range(height)]
-        self.left = 0
-        self.top = 0
         self.cell_size = tile_size
         self.board = self.create_board()
 
     def create_board(self):
-        board = []
-        for row in self.level_data:
-            board_row = []
-            for cell in row:
-                board_row.append(cell)
-            board.append(board_row)
-        return board
+        return [[cell for cell in row] for row in self.level_data]
 
-    def set_view(self, left, top, cell_size):
-        self.left = left
-        self.top = top
-        self.cell_size = cell_size
+    def render(self, screen, camera):
+        start_x = max(0, camera.offset_x)
+        start_y = max(0, camera.offset_y)
+        end_x = min(self.width, start_x + VISIBLE_CELLS)
+        end_y = min(self.height, start_y + VISIBLE_CELLS)
 
-    def render(self, screen):
-        x, y = self.left, self.top
-        for row_index, row in enumerate(self.board):
-            for col_index, cell in enumerate(row):
-                rect = (x, y, self.cell_size, self.cell_size)
-                if cell == '#':
+        for row in range(start_y, end_y):
+            for col in range(start_x, end_x):
+                rect_x = (col - camera.offset_x) * self.cell_size
+                rect_y = (row - camera.offset_y) * self.cell_size
+                rect = (rect_x, rect_y, self.cell_size, self.cell_size)
+
+                if self.board[row][col] == '#':
                     screen.blit(box_image, rect)
-                elif cell == '.':
+                elif self.board[row][col] == '.':
                     screen.blit(grass_image, rect)
-                x += self.cell_size
-            y += self.cell_size
-            x = self.left
-
-    def get_cell(self, mouse_pos):
-        if mouse_pos[0] < self.left or mouse_pos[0] > self.left + self.cell_size * len(self.board[0]):
-            return None
-        if mouse_pos[1] < self.top or mouse_pos[1] > self.top + self.cell_size * len(self.board):
-            return None
-
-        x = (mouse_pos[0] - self.left) // self.cell_size
-        y = (mouse_pos[1] - self.top) // self.cell_size
-        return (x, y)
-
-    def on_click(self, cell_coords):
-        pass
-
-    def get_click(self, mouse_pos):
-        cell = self.get_cell(mouse_pos)
-        self.on_click(cell)
 
     def is_valid_move(self, row, col):
-        if 0 <= row < len(self.board) and 0 <= col < len(self.board[0]):
-            return self.board[row][col] == '.'
-        return False
+        return 0 <= row < self.height and 0 <= col < self.width and self.board[row][col] == '.'
 
-    def get_cell_coords(self, row, col):
-        x = col * self.cell_size + self.left
-        y = row * self.cell_size + self.top
-        return x, y
+
+class Camera:
+    def __init__(self, board):
+        self.board = board
+        self.offset_x = 0
+        self.offset_y = 0
+
+    def update(self, player):
+        self.offset_x = max(0, min(player.col - VISIBLE_CELLS // 2, self.board.width - VISIBLE_CELLS))
+        self.offset_y = max(0, min(player.row - VISIBLE_CELLS // 2, self.board.height - VISIBLE_CELLS))
 
 
 class Player(pygame.sprite.Sprite):
@@ -111,13 +90,13 @@ class Player(pygame.sprite.Sprite):
         self.row = y
         self.col = x
         self.update_rect()
-        self.inited = True
         self.can_move = True
 
     def update_rect(self):
-        x, y = self.board.get_cell_coords(self.row, self.col)
-        self.rect.x = x + (self.board.cell_size - self.rect.width) // 2
-        self.rect.y = y + (self.board.cell_size - self.rect.height) // 2
+        screen_x = (self.col - camera.offset_x) * self.board.cell_size
+        screen_y = (self.row - camera.offset_y) * self.board.cell_size
+        self.rect.x = screen_x + (self.board.cell_size - self.rect.width) // 2
+        self.rect.y = screen_y + (self.board.cell_size - self.rect.height) // 2
 
     def update(self, events):
         if self.can_move:
@@ -141,6 +120,7 @@ class Player(pygame.sprite.Sprite):
             self.col = new_col
             self.update_rect()
             self.can_move = False
+            camera.update(self)
 
 
 def load_level(filename):
@@ -151,58 +131,37 @@ def load_level(filename):
     try:
         with open(filename, 'r') as mapFile:
             level_map = [line.strip() for line in mapFile]
-        
-        if not all(all(c in '#.' for c in row) for row in level_map):
-            print(f"Файл '{filename}' не является планом уровня")
-            return None
-            
+
         max_width = max(map(len, level_map))
         return [list(row.ljust(max_width, '.')) for row in level_map]
-    except UnicodeDecodeError:
-        print(f"Файл '{filename}' не является текстовым файлом")
-        return None
     except Exception:
         print(f"Не удалось обработать файл '{filename}'")
         return None
 
+
 def find_free_coordinates(level):
-    free_coords = []
-    for row_index, row in enumerate(level):
-        for col_index, cell in enumerate(row):
-            if cell == '.':
-                free_coords.append((col_index, row_index))
-    return free_coords
+    return [(col, row) for row in range(len(level)) for col in range(len(level[row])) if level[row][col] == '.']
 
 
-# Get level filename from input
 while True:
     level_filename = input("Введите имя файла уровня (например, level1.txt): ")
     level_data = load_level(level_filename)
-    if level_data is not None:
+    if level_data:
         break
     print("Неверное имя файла или некорректный формат уровня. Попробуйте еще раз.")
 
 board = Board(len(level_data[0]), len(level_data), level_data)
+camera = Camera(board)
 
 free_coordinates = find_free_coordinates(level_data)
+player = Player(*random.choice(free_coordinates), board) if free_coordinates else Player(0, 0, board)
+camera.update(player)
 
-player = None
-if free_coordinates:
-    start_col, start_row = random.choice(free_coordinates)
-    player = Player(start_col, start_row, board)
-else:
-    player = Player(0, 0, board)
-
-all_sprites = pygame.sprite.Group()
-
-if player:
-    all_sprites.add(player)
+all_sprites = pygame.sprite.Group(player)
 
 running = True
 clock = pygame.time.Clock()
-
 fon_image = pygame.transform.scale(fon_image, (screen_width, screen_height))
-
 game_state = "menu"
 
 
@@ -210,13 +169,11 @@ def draw_menu():
     screen.blit(fon_image, (0, 0))
     font = pygame.font.Font(None, 74)
     text = font.render("Mario Game", True, white)
-    text_rect = text.get_rect(center=(screen_width // 2, screen_height // 3))
-    screen.blit(text, text_rect)
+    screen.blit(text, text.get_rect(center=(screen_width // 2, screen_height // 3)))
 
     font = pygame.font.Font(None, 48)
     text = font.render("Press ENTER to start", True, white)
-    text_rect = text.get_rect(center=(screen_width // 2, screen_height // 2))
-    screen.blit(text, text_rect)
+    screen.blit(text, text.get_rect(center=(screen_width // 2, screen_height // 2)))
 
     pygame.display.flip()
 
@@ -226,33 +183,24 @@ while running:
     for event in events:
         if event.type == pygame.QUIT:
             running = False
-        if event.type == pygame.KEYDOWN:
-            if game_state == "menu":
-                if event.key == pygame.K_RETURN:
-                    game_state = "game"
-                    free_coordinates = find_free_coordinates(level_data)
-                    if free_coordinates:
-                        start_col, start_row = random.choice(free_coordinates)
-                        player = Player(start_col, start_row, board)
-                        all_sprites.empty()
-                        all_sprites.add(player)
-                    else:
-                        player = Player(0, 0, board)
-                        all_sprites.empty()
-                        all_sprites.add(player)
-        if event.type == pygame.KEYUP:
-            if player:
-                player.can_move = True
+        if event.type == pygame.KEYDOWN and game_state == "menu":
+            if event.key == pygame.K_RETURN:
+                game_state = "game"
+                player = Player(*random.choice(free_coordinates), board) if free_coordinates else Player(0, 0, board)
+                camera.update(player)
+                all_sprites.empty()
+                all_sprites.add(player)
+        if event.type == pygame.KEYUP and player:
+            player.can_move = True
 
     if game_state == "menu":
         draw_menu()
     elif game_state == "game":
-        if player and player.inited:
-            player.update(events)
-            screen.blit(fon_image, (0, 0))
-            board.render(screen)
-            all_sprites.draw(screen)
-            pygame.display.flip()
+        player.update(events)
+        screen.blit(fon_image, (0, 0))
+        board.render(screen, camera)
+        all_sprites.draw(screen)
+        pygame.display.flip()
 
     clock.tick(60)
 
