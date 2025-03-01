@@ -50,24 +50,28 @@ class Board:
         return [[cell for cell in row] for row in self.level_data]
 
     def render(self, screen, camera):
-        start_x = max(0, camera.offset_x)
-        start_y = max(0, camera.offset_y)
-        end_x = min(self.width, start_x + VISIBLE_CELLS)
-        end_y = min(self.height, start_y + VISIBLE_CELLS)
+        start_x = camera.offset_x
+        start_y = camera.offset_y
+        
+        for row_offset in range(-1,2):
+            for col_offset in range(-1, 2):
+                
+                for row in range(VISIBLE_CELLS):
+                    for col in range(VISIBLE_CELLS):
+                        actual_row = (start_y + row + row_offset * self.height) % self.height
+                        actual_col = (start_x + col + col_offset * self.width) % self.width
 
-        for row in range(start_y, end_y):
-            for col in range(start_x, end_x):
-                rect_x = (col - camera.offset_x) * self.cell_size
-                rect_y = (row - camera.offset_y) * self.cell_size
-                rect = (rect_x, rect_y, self.cell_size, self.cell_size)
-
-                if self.board[row][col] == '#':
-                    screen.blit(box_image, rect)
-                elif self.board[row][col] == '.':
-                    screen.blit(grass_image, rect)
+                        rect_x = col * self.cell_size
+                        rect_y = row * self.cell_size
+                        rect = (rect_x, rect_y, self.cell_size, self.cell_size)
+                        
+                        if self.board[actual_row][actual_col] == '#':
+                            screen.blit(box_image, rect)
+                        elif self.board[actual_row][actual_col] == '.':
+                            screen.blit(grass_image, rect)
 
     def is_valid_move(self, row, col):
-        return 0 <= row < self.height and 0 <= col < self.width and self.board[row][col] == '.'
+        return self.board[row % self.height][col % self.width] == '.'
 
 
 class Camera:
@@ -77,8 +81,9 @@ class Camera:
         self.offset_y = 0
 
     def update(self, player):
-        self.offset_x = max(0, min(player.col - VISIBLE_CELLS // 2, self.board.width - VISIBLE_CELLS))
-        self.offset_y = max(0, min(player.row - VISIBLE_CELLS // 2, self.board.height - VISIBLE_CELLS))
+        self.offset_x = player.col - VISIBLE_CELLS // 2
+        self.offset_y = player.row - VISIBLE_CELLS // 2
+
 
 
 class Player(pygame.sprite.Sprite):
@@ -93,8 +98,8 @@ class Player(pygame.sprite.Sprite):
         self.can_move = True
 
     def update_rect(self):
-        screen_x = (self.col - camera.offset_x) * self.board.cell_size
-        screen_y = (self.row - camera.offset_y) * self.board.cell_size
+        screen_x = (self.col-camera.offset_x) * self.board.cell_size
+        screen_y = (self.row-camera.offset_y) * self.board.cell_size
         self.rect.x = screen_x + (self.board.cell_size - self.rect.width) // 2
         self.rect.y = screen_y + (self.board.cell_size - self.rect.height) // 2
 
@@ -116,8 +121,8 @@ class Player(pygame.sprite.Sprite):
         new_col = self.col + dx
 
         if self.board.is_valid_move(new_row, new_col):
-            self.row = new_row
-            self.col = new_col
+            self.row = new_row % self.board.height
+            self.col = new_col % self.board.width
             self.update_rect()
             self.can_move = False
             camera.update(self)
