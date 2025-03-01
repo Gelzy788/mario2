@@ -96,5 +96,4 @@ Pipfile.lock
 *.key
 
 # Optional: if you use data science lib
-data/
 /venv
